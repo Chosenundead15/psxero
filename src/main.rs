@@ -6,7 +6,9 @@ use std::path::Path;
 fn main() {
     let bios = psx::Bios::new(&Path::new("resources/SCPH1001.BIN")).unwrap();
 
-    let inter = psx::Interconnect::new(bios);
+    let ram = psx::Ram::new();
+
+    let inter = psx::Interconnect::new(bios, ram);
 
     let mut cpu = psx::Cpu::new(inter);
 
