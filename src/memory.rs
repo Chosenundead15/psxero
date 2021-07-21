@@ -33,6 +33,8 @@ pub mod map {
     pub const EXPANSION_1: Range = Range(0x1f000000, 512 * 1024);
     pub const EXPANSION_2: Range = Range(0x1f802000, 66);
 
+    pub const IRQ_CONTROL: Range = Range(0x1f801070, 8);
+
     pub struct Range(u32, u32);
 
     impl Range {
@@ -111,13 +113,13 @@ impl Interconnect {
             panic!("unaligned_load32_adress_{:#x}", addr);
         }
 
-        let addr = map::mask_region(addr);
+        let abs_addr = map::mask_region(addr);
 
-        if let Some(offset) = map::BIOS.contains(addr) {
+        if let Some(offset) = map::BIOS.contains(abs_addr) {
             return self.bios.load32(offset)
         }
 
-        if let Some(offset) = map::RAM.contains(addr) {
+        if let Some(offset) = map::RAM.contains(abs_addr) {
             return self.ram.load32(offset)
         }
         panic!("unhandled_fecth_at_address_{:08x}", addr);
@@ -164,7 +166,6 @@ impl Interconnect {
 
         if let Some(offset) = map::RAM.contains(addr) {
             self.ram.store32(offset, val);
-
             return;
         }
 
@@ -178,11 +179,15 @@ impl Interconnect {
             return;
         }
 
+        if let Some(offset) = map::IRQ_CONTROL.contains(addr) {
+            println!("IRQ Control: {:#x} <- {:#x}", offset, val);
+            return;
+        }
 
         panic!("unhandled_store32_at_address_{:08x}", addr);
     }
 
-    pub fn store16(&mut self, addr: u32, val: u16) {
+    pub fn store16(&mut self, addr: u32, _val: u16) {
         if addr % 2 != 0 {
             panic!("unligned store16 address {:#x}", addr);
         }
@@ -201,6 +206,7 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
+            println!("writing to ram value {} on address {:#x}", val, addr);
             return self.ram.store8(offset, val)
         }
 

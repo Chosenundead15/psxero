@@ -82,7 +82,7 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
-                0b100000 => self.op_and(instruction),
+                0b100000 => self.op_add(instruction),
                 0b101011 => self.op_sltu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
@@ -181,6 +181,8 @@ impl Cpu {
         let d = instruction.d();
         let s = instruction.s();
         let t = instruction.t();
+
+        println!("{:#x}", self.pc - 4);
 
         let v = self.reg(s) & self.reg(t);
 
