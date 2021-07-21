@@ -9,7 +9,9 @@ pub struct Cpu {
     next_instruction: Instruction,
     sr: u32, //status register from coprocesor 0
     out_regs: [u32; 32],
-    load: (RegisterIndex, u32)
+    load: (RegisterIndex, u32),
+    hi: u32, //HI register to store division remainder and multiplication high result
+    lo: u32, //LO register to store division quotient and mulstiplication low result
 }
 
 impl Cpu {
@@ -25,7 +27,9 @@ impl Cpu {
             next_instruction: Instruction(0x0), //NOP
             sr: 0,
             out_regs: regs,
-            load: (RegisterIndex(0), 0)
+            load: (RegisterIndex(0), 0),
+            hi: 0xdeadbeef,
+            lo: 0xdeadbeef,
         }
     }
 
@@ -82,20 +86,25 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b000011 => self.op_sra(instruction),
                 0b100000 => self.op_add(instruction),
                 0b101011 => self.op_sltu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
                 0b100001 => self.op_addu(instruction),
+                0b011010 => self.op_div(instruction),
+                0b100011 => self.op_subu(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 _        => panic!("unhandled instruction {:#x}", instruction.0)
             }
+            0b000001 => self.op_bxx(instruction),
             0b000010 => self.op_j(instruction),
             0b000011 => self.op_jal(instruction),
             0b001111 => self.op_lui(instruction),
             0b001100 => self.op_andi(instruction),
             0b001101 => self.op_ori(instruction),
+            0b001010 => self.op_slti(instruction),
             0b101011 => self.op_sw(instruction),
             0b101001 => self.op_sh(instruction),
             0b101000 => self.op_sb(instruction),
@@ -255,7 +264,18 @@ impl Cpu {
         self.set_reg(d, v);
     }
 
-    //Set on less than unsigned
+    //shift right arithmetic
+    fn op_sra(&mut self, instruction: Instruction) {
+        let i = instruction.shift();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = (self.reg(t) as i32) >> i;
+
+        self.set_reg(d, v as u32);
+    }
+
+    //Set if less than unsigned
     fn op_sltu(&mut self, instruction: Instruction) {
         let t = instruction.t();
         let s = instruction.s();
@@ -264,6 +284,17 @@ impl Cpu {
         let v = self.reg(s) < self.reg(t);
 
         self.set_reg(d, v as u32);
+    }
+
+    //set if less than immediate
+    fn op_slti(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se() as i32;
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = (self.reg(s) as i32) < i;
+
+        self.set_reg(t, v as u32);
     }
 
     //add immediate unsigned
@@ -284,6 +315,17 @@ impl Cpu {
         let t = instruction.t();
 
         let v = self.reg(s).wrapping_add(self.reg(t));
+
+        self.set_reg(d, v);
+    }
+
+    //substract unsigned
+    fn op_subu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let d = instruction.d();
+        let t = instruction.t();
+
+        let v = self.reg(s).wrapping_sub(self.reg(t));
 
         self.set_reg(d, v);
     }
@@ -319,6 +361,31 @@ impl Cpu {
         };
 
         self.set_reg(d, v);
+    }
+
+    //divide signed
+    fn op_div(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let n = self.reg(s) as i32;
+        let d = self.reg(t) as i32;
+
+        if d == 0 {
+            self.hi = n as u32;
+            
+            if n >= 0 {
+                self.lo = 0xffffffff;
+            } else {
+                self.lo = 1;
+            }
+        } else if n as u32 == 0x8000000 && d == -1 {
+            self.hi = 0;
+            self.lo = 0x8000000;
+        } else {
+            self.hi = (n % d) as u32;
+            self.lo = (n / d) as u32;
+        }
     }
 
     //jump
@@ -390,6 +457,7 @@ impl Cpu {
         }
     }
 
+    //branch if less than zero
     fn op_blez(&mut self, instruction: Instruction) {
         let i = instruction.imm_se();
         let s = instruction.s();
@@ -397,6 +465,34 @@ impl Cpu {
         let v = self.reg(s) as i32;
 
         if v <= 0 {
+            self.branch(i);
+        }
+    }
+
+    //various branch instructions that share MSB: BGEZ, BLTZ, BGEZAL, BLTZAL
+    //bits 16 and 20 are to choose which one to use
+    fn op_bxx(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+
+        let instruction = instruction.0;
+
+        let is_bgez = (instruction >> 16) & 1;
+        let is_link = (instruction >> 20) & 1 != 0;
+
+        let v = self.reg(s) as i32;
+
+        let test = (v < 0) as u32;
+
+        let test = test ^ is_bgez;
+
+        if test != 0 {
+            if is_link {
+                let ra = self.pc;
+
+                self.set_reg(RegisterIndex(31), ra)
+            }
+
             self.branch(i);
         }
     }
