@@ -102,6 +102,7 @@ impl Cpu {
             0b001000 => self.op_addi(instruction),
             0b000101 => self.op_bne(instruction),
             0b000100 => self.op_beq(instruction),
+            0b000110 => self.op_blez(instruction),
             0b000111 => self.op_bgtz(instruction),
             0b100011 => self.op_lw(instruction),
             0b100000 => self.op_lb(instruction),
@@ -363,6 +364,7 @@ impl Cpu {
         }
     }
 
+    //branch if greater than zero
     fn op_bgtz(&mut self, instruction: Instruction) {
         let i = instruction.imm_se();
         let s = instruction.s();
@@ -370,6 +372,17 @@ impl Cpu {
         let v = self.reg(s) as i32;
 
         if v > 0 {
+            self.branch(i);
+        }
+    }
+
+    fn op_blez(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+
+        let v = self.reg(s) as i32;
+
+        if v <= 0 {
             self.branch(i);
         }
     }
