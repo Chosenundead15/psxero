@@ -88,6 +88,7 @@ impl Cpu {
                 0b100101 => self.op_or(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b001000 => self.op_jr(instruction),
+                0b001001 => self.op_jalr(instruction),
                 _        => panic!("unhandled instruction {:#x}", instruction.0)
             }
             0b000010 => self.op_j(instruction),
@@ -106,6 +107,7 @@ impl Cpu {
             0b000111 => self.op_bgtz(instruction),
             0b100011 => self.op_lw(instruction),
             0b100000 => self.op_lb(instruction),
+            0b100100 => self.op_lbu(instruction),
             0b010000 => self.op_cop0(instruction),
             _        => panic!("Unhandled_instruction_{:#x}", instruction.0)
         }
@@ -342,6 +344,18 @@ impl Cpu {
         self.pc = self.reg(s);
     }
 
+    //jump and link register
+    fn op_jalr(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+
+        let ra = self.pc;
+
+        self.set_reg(d, ra);
+
+        self.pc = self.reg(s);
+    }
+
     //branch if not equal
     fn op_bne(&mut self, instruction: Instruction) {
         let i = instruction.imm_se();
@@ -416,6 +430,19 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         let v = self.load8(addr) as i8;
+
+        self.load = (t, v as u32);
+    }
+
+    //load byte unsigned
+    fn op_lbu(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        let v = self.load8(addr);
 
         self.load = (t, v as u32);
     }
