@@ -106,7 +106,9 @@ impl Cpu {
                 0b011010 => self.op_div(instruction),
                 0b011011 => self.op_divu(instruction),  
                 0b010010 => self.op_mflo(instruction),
+                0b010011 => self.op_mtlo(instruction),
                 0b010000 => self.op_mfhi(instruction),
+                0b010001 => self.op_mthi(instruction),
                 0b100011 => self.op_subu(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
@@ -158,6 +160,7 @@ impl Cpu {
         match instruction.cop_opcode() {
             0b00100 => self.op_mtc0(instruction),
             0b00000 => self.op_mfc0(instruction),
+            0b10000 => self.op_rfe(instruction),
             _       => panic!("unhandle coprocessor instruction {:#x}", instruction.0)
         }
     }
@@ -464,6 +467,13 @@ impl Cpu {
         self.set_reg(d, lo);
     }
 
+    //move to LO
+    fn op_mtlo(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+
+        self.lo = self.reg(s);
+    }
+
     //move from HH
     fn op_mfhi(&mut self, instruction: Instruction) {
         let d = instruction.d();
@@ -471,6 +481,13 @@ impl Cpu {
         let hi = self.hi;
 
         self.set_reg(d, hi);
+    }
+
+    //mote to HI
+    fn op_mthi(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+
+        self.hi = self.reg(s);
     }
 
     //jump
@@ -664,6 +681,20 @@ impl Cpu {
         };
 
         self.load = (cpu_r, v);
+    }
+
+    //return from exception
+    fn op_rfe(&mut self, instruction: Instruction) {
+        //unlike normal MIPS processors, there is only one instruction with this encoding for the PSX
+        //This code is to make sure buggy code is trying to run in the emulator
+        if instruction.0 & 0x3f != 0b010000 {
+            panic!("invalid cop0 instruction {}", instruction.0);
+        }
+
+        //undo the action when the exception started
+        let mode = self.sr & 0x3f;
+        self.sr &= !0x3f;
+        self.sr |= mode >> 2; 
     }
 
     fn exception(&mut self, cause: Exception) {
