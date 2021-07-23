@@ -35,6 +35,8 @@ pub mod map {
 
     pub const IRQ_CONTROL: Range = Range(0x1f801070, 8);
 
+    pub const TIMERS: Range = Range(0x1f801100, 0x30);
+
     pub struct Range(u32, u32);
 
     impl Range {
@@ -122,6 +124,11 @@ impl Interconnect {
         if let Some(offset) = map::RAM.contains(abs_addr) {
             return self.ram.load32(offset)
         }
+
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control read {:#x}", offset);
+            return 0;
+        }
         panic!("unhandled_fecth_at_address_{:08x}", addr);
     }
 
@@ -199,6 +206,11 @@ impl Interconnect {
             return
         }
 
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            println!("unhandle write to timer register {:#x}", offset);
+            return
+        }
+
         panic!("unhandle store16 address {:#x}", addr);
     }
 
@@ -206,7 +218,6 @@ impl Interconnect {
         let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
-            println!("writing to ram value {} on address {:#x}", val, addr);
             return self.ram.store8(offset, val)
         }
 

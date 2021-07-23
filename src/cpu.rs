@@ -6,12 +6,15 @@ pub struct Cpu {
     pc: u32, //program counter
     regs: [u32; 32], //general purpose register, first one must always contains zero
     inter: Interconnect, //memory interface
-    next_instruction: Instruction,
+    next_pc: u32,
     sr: u32, //status register from coprocesor 0
     out_regs: [u32; 32],
     load: (RegisterIndex, u32),
     hi: u32, //HI register to store division remainder and multiplication high result
     lo: u32, //LO register to store division quotient and mulstiplication low result
+    current_pc: u32, //currently instruction on execution used to set EPC exceptions
+    cause: u32, //Cop0 register 13: Cause Register
+    epc: u32, //Cop0 register 14: EPC
 }
 
 impl Cpu {
@@ -19,17 +22,22 @@ impl Cpu {
         //don't know what the reset values for register are so I will use simias guide values for reference and debugging
         let mut regs = [0xdeadbeef; 32];
 
+        let pc: u32 = 0xbfc00000;
+
         regs[0] = 0; //R0 remains zero as it should
         Cpu {
-            pc: 0xbfc00000, //beginning of the BIOS
+            pc: pc, //beginning of the BIOS
             regs: regs,
             inter: inter,
-            next_instruction: Instruction(0x0), //NOP
+            next_pc: pc.wrapping_add(4),
             sr: 0,
             out_regs: regs,
             load: (RegisterIndex(0), 0),
             hi: 0xdeadbeef,
             lo: 0xdeadbeef,
+            current_pc: pc,
+            cause: 0,
+            epc: 0,
         }
     }
 
@@ -58,11 +66,12 @@ impl Cpu {
     pub fn run_next_instruction(&mut self) {
         let pc = self.pc;
 
-        let instruction = self.next_instruction;
+        let instruction = Instruction(self.load32(pc));
 
-        self.next_instruction = Instruction(self.load32(pc));
+        self.current_pc = self.pc;
 
-        self.pc = pc.wrapping_add(4);
+        self.pc = self.next_pc;
+        self.next_pc = self.next_pc.wrapping_add(4);
 
         let (reg, val) = self.load;
         self.set_reg(reg, val);
@@ -86,16 +95,22 @@ impl Cpu {
         match instruction.function() {
             0b000000 => match instruction.subfunction() {
                 0b000000 => self.op_sll(instruction),
+                0b000010 => self.op_srl(instruction),
                 0b000011 => self.op_sra(instruction),
                 0b100000 => self.op_add(instruction),
+                0b101010 => self.op_slt(instruction),
                 0b101011 => self.op_sltu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
                 0b100001 => self.op_addu(instruction),
                 0b011010 => self.op_div(instruction),
+                0b011011 => self.op_divu(instruction),  
+                0b010010 => self.op_mflo(instruction),
+                0b010000 => self.op_mfhi(instruction),
                 0b100011 => self.op_subu(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
+                0b001100 => self.op_syscall(instruction),
                 _        => panic!("unhandled instruction {:#x}", instruction.0)
             }
             0b000001 => self.op_bxx(instruction),
@@ -105,6 +120,7 @@ impl Cpu {
             0b001100 => self.op_andi(instruction),
             0b001101 => self.op_ori(instruction),
             0b001010 => self.op_slti(instruction),
+            0b001011 => self.op_sltiu(instruction),
             0b101011 => self.op_sw(instruction),
             0b101001 => self.op_sh(instruction),
             0b101000 => self.op_sb(instruction),
@@ -127,14 +143,14 @@ impl Cpu {
         //32 bits align to the offset
         let offset = offset << 2;
 
-        let mut pc = self.pc;
+        let mut pc = self.next_pc;
 
         pc = pc.wrapping_add(offset);
 
         //compensate for hardcoded wrapping pc + 4 on run_next_instruction
         pc = pc.wrapping_sub(4);
-
-        self.pc = pc;
+        
+        self.next_pc = pc;
     }
 
     //coprocessor 0 opcode
@@ -194,8 +210,6 @@ impl Cpu {
         let d = instruction.d();
         let s = instruction.s();
         let t = instruction.t();
-
-        println!("{:#x}", self.pc - 4);
 
         let v = self.reg(s) & self.reg(t);
 
@@ -275,6 +289,31 @@ impl Cpu {
         self.set_reg(d, v as u32);
     }
 
+    //shift right logical
+    fn op_srl(&mut self, instruction: Instruction) {
+        let i = instruction.shift();
+        let d = instruction.d();
+        let t = instruction.t();
+
+        let v = self.reg(t) >> i;
+
+        self.set_reg(d, v);
+    }
+
+    //set if less than signed
+    fn op_slt(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let s = self.reg(s) as i32;
+        let t = self.reg(t) as i32;
+
+        let v = s < t;
+
+        self.set_reg(d, v as u32);
+    }
+
     //Set if less than unsigned
     fn op_sltu(&mut self, instruction: Instruction) {
         let t = instruction.t();
@@ -284,6 +323,17 @@ impl Cpu {
         let v = self.reg(s) < self.reg(t);
 
         self.set_reg(d, v as u32);
+    }
+
+    //set if less than immediate unsigned
+    fn op_sltiu(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(s) < i;
+
+        self.set_reg(t, v as u32);
     }
 
     //set if less than immediate
@@ -388,16 +438,51 @@ impl Cpu {
         }
     }
 
+    //divide unsigned
+    fn op_divu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let n = self.reg(s);
+        let d = self.reg(t);
+
+        if d == 0 {
+            self.hi = n;
+            self.lo = 0xffffffff;
+        } else {
+            self.hi = n % d;
+            self.lo = n / d;
+        }
+    }
+
+    //move from LO
+    fn op_mflo(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+
+        let lo = self.lo;
+
+        self.set_reg(d, lo);
+    }
+
+    //move from HH
+    fn op_mfhi(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+
+        let hi = self.hi;
+
+        self.set_reg(d, hi);
+    }
+
     //jump
     fn op_j(&mut self, instruction: Instruction) {
         let i = instruction.imm_jump();
 
-        self.pc = (self.pc & 0xf0000000) | (i << 2);
+        self.next_pc = (self.pc & 0xf0000000) | (i << 2);
     }
 
     //jump and link
     fn op_jal(&mut self, instruction: Instruction) {
-        let ra = self.pc;
+        let ra = self.next_pc;
 
         self.set_reg(RegisterIndex(31), ra);
 
@@ -408,7 +493,7 @@ impl Cpu {
     fn op_jr(&mut self, instruction: Instruction) {
         let s = instruction.s();
 
-        self.pc = self.reg(s);
+        self.next_pc = self.reg(s);
     }
 
     //jump and link register
@@ -416,11 +501,11 @@ impl Cpu {
         let d = instruction.d();
         let s = instruction.s();
 
-        let ra = self.pc;
+        let ra = self.next_pc;
 
         self.set_reg(d, ra);
 
-        self.pc = self.reg(s);
+        self.next_pc = self.reg(s);
     }
 
     //branch if not equal
@@ -543,6 +628,7 @@ impl Cpu {
         self.load = (t, v as u32);
     }
 
+    //move to coprocessor 0
     fn op_mtc0(&mut self, instruction: Instruction) {
         let cpu_r = instruction.t();
         let cop_r = instruction.d().0;
@@ -565,19 +651,48 @@ impl Cpu {
         }
     }
 
+    //move from coprocesor 0
     fn op_mfc0(&mut self, instruction: Instruction) {
         let cpu_r = instruction.t();
         let cop_r = instruction.d().0;
 
         let v = match cop_r {
             12 => self.sr,
-            13 => panic!("unhandle read from CAUSE {}", cop_r), //CAUSE Register
+            13 => self.cause,
+            14 => self.epc,
             _ => panic!("unhandle read from cop0r {:#x}", cop_r),
         };
 
         self.load = (cpu_r, v);
     }
 
+    fn exception(&mut self, cause: Exception) {
+        //handler depends on the BEV bit
+        let handler = match self.sr & (1 << 22) != 0 {
+            true => 0xbfc00180,
+            false => 0x80000080,
+        };
+
+        let mode = self.sr & 0x3f;
+        self.sr &= 0x3f;
+        self.sr |= (mode << 2) & 0x3f;
+
+        self.cause = (cause as u32) << 2;
+
+        self.epc = self.current_pc;
+
+        //exceptions don't have branch delay, we jump directly
+        self.pc = handler;
+        self.next_pc = self.pc.wrapping_add(4);
+    }
+
+    fn op_syscall(&mut self, _: Instruction) {
+        self.exception(Exception::SysCall);
+    }
+}
+
+enum Exception {
+    SysCall = 0x8,
 }
 
 #[derive(Copy, Clone)]
