@@ -400,12 +400,10 @@ impl Cpu {
 
         let s = self.reg(s) as i32;
 
-        let v = match s.checked_add(i) {
-            Some(v) => v as u32,
-            None => panic!("ADDI overflow"),
-        };
-
-        self.set_reg(t, v);
+        match s.checked_add(i) {
+            Some(v) => self.set_reg(t, v as u32),
+            None => self.exception(Exception::Overflow),
+        }
     }
 
     //add and generate exception on overflow
@@ -417,12 +415,10 @@ impl Cpu {
         let s = self.reg(s) as i32;
         let t = self.reg(t) as i32;
 
-        let v = match s.checked_add(t) {
-            Some(v) => v as u32,
-            None => panic!("ADD overflow"),
+        match s.checked_add(t) {
+            Some(v) => self.set_reg(d, v as u32),
+            None => self.exception(Exception::Overflow),
         };
-
-        self.set_reg(d, v);
     }
 
     //divide signed
@@ -746,6 +742,7 @@ impl Cpu {
 
 enum Exception {
     SysCall = 0x8,
+    Overflow = 0xc,
 }
 
 #[derive(Copy, Clone)]
