@@ -15,6 +15,8 @@ pub struct Cpu {
     current_pc: u32, //currently instruction on execution used to set EPC exceptions
     cause: u32, //Cop0 register 13: Cause Register
     epc: u32, //Cop0 register 14: EPC
+    branch: bool, //set if there is branching and the next instruction is delay slot
+    delay_slot: bool, //set if current instruction is delay slot
 }
 
 impl Cpu {
@@ -38,6 +40,8 @@ impl Cpu {
             current_pc: pc,
             cause: 0,
             epc: 0,
+            branch: false,
+            delay_slot: false
         }
     }
 
@@ -72,6 +76,9 @@ impl Cpu {
 
         self.pc = self.next_pc;
         self.next_pc = self.next_pc.wrapping_add(4);
+
+        self.delay_slot = self.branch;
+        self.delay_slot = false;
 
         let (reg, val) = self.load;
         self.set_reg(reg, val);
@@ -153,6 +160,8 @@ impl Cpu {
         pc = pc.wrapping_sub(4);
         
         self.next_pc = pc;
+
+        self.branch = true;
     }
 
     //coprocessor 0 opcode
@@ -495,6 +504,8 @@ impl Cpu {
         let i = instruction.imm_jump();
 
         self.next_pc = (self.pc & 0xf0000000) | (i << 2);
+
+        self.branch = true;
     }
 
     //jump and link
@@ -511,6 +522,8 @@ impl Cpu {
         let s = instruction.s();
 
         self.next_pc = self.reg(s);
+
+        self.branch = true;
     }
 
     //jump and link register
@@ -523,6 +536,8 @@ impl Cpu {
         self.set_reg(d, ra);
 
         self.next_pc = self.reg(s);
+
+        self.branch = true;
     }
 
     //branch if not equal
@@ -711,6 +726,13 @@ impl Cpu {
         self.cause = (cause as u32) << 2;
 
         self.epc = self.current_pc;
+
+        //if an exception occurs durin a delay slot, EPC points to the branch instruction
+        //and bit 31 of CAUSE is set
+        if self.delay_slot {
+            self.epc = self.epc.wrapping_add(4);
+            self.cause |= 1 << 31;
+        }
 
         //exceptions don't have branch delay, we jump directly
         self.pc = handler;
