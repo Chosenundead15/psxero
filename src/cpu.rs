@@ -70,6 +70,13 @@ impl Cpu {
     pub fn run_next_instruction(&mut self) {
         let pc = self.pc;
 
+        self.current_pc = pc;
+
+        if self.current_pc % 4 != 0 {
+            self.exception(Exception::LoadAddressError);
+            return;
+        }
+
         let instruction = Instruction(self.load32(pc));
 
         self.current_pc = self.pc;
@@ -94,6 +101,10 @@ impl Cpu {
         self.inter.load32(addr)
     }
 
+    pub fn load16(&mut self, addr: u32) -> u16 {
+        self.inter.load16(addr)
+    }
+
     pub fn load8(&mut self, addr: u32) -> u8 {
         self.inter.load8(addr)
     }
@@ -104,12 +115,17 @@ impl Cpu {
                 0b000000 => self.op_sll(instruction),
                 0b000010 => self.op_srl(instruction),
                 0b000011 => self.op_sra(instruction),
+                0b000100 => self.op_sllv(instruction),
+                0b000110 => self.op_srlv(instruction),
+                0b000111 => self.op_srav(instruction),
                 0b100000 => self.op_add(instruction),
                 0b101010 => self.op_slt(instruction),
                 0b101011 => self.op_sltu(instruction),
                 0b100100 => self.op_and(instruction),
                 0b100101 => self.op_or(instruction),
+                0b100111 => self.op_nor(instruction),
                 0b100001 => self.op_addu(instruction),
+                0b011001 => self.op_multu(instruction),
                 0b011010 => self.op_div(instruction),
                 0b011011 => self.op_divu(instruction),  
                 0b010010 => self.op_mflo(instruction),
@@ -142,6 +158,8 @@ impl Cpu {
             0b100011 => self.op_lw(instruction),
             0b100000 => self.op_lb(instruction),
             0b100100 => self.op_lbu(instruction),
+            0b100101 => self.op_lhu(instruction),
+            0b100001 => self.op_lh(instruction),
             0b010000 => self.op_cop0(instruction),
             _        => panic!("Unhandled_instruction_{:#x}", instruction.0)
         }
@@ -206,13 +224,24 @@ impl Cpu {
         self.set_reg(t, v);
     }
 
-    //bitwise op
+    //bitwise or
     fn op_or(&mut self, instruction: Instruction) {
         let d = instruction.d();
         let s = instruction.s();
         let t = instruction.t();
 
         let v = self.reg(s) | self.reg(t);
+
+        self.set_reg(d, v);
+    }
+
+    //bitwise nor
+    fn op_nor(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = !(self.reg(s) | self.reg(t));
 
         self.set_reg(d, v);
     }
@@ -242,7 +271,11 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v = self.reg(t);
 
-        self.store32(addr, v);
+        if addr % 4 == 0 {
+            self.store32(addr, v);
+        } else {
+            self.exception(Exception::StoreAddressError);
+        }
     }
 
     //store halfword
@@ -259,7 +292,11 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
         let v = self.reg(t);
 
-        self.store16(addr, v as u16);
+        if addr % 2 == 0 {
+            self.store16(addr, v as u16);
+        } else {
+            self.exception(Exception::StoreAddressError);
+        }
     }
 
     //store byte
@@ -290,6 +327,17 @@ impl Cpu {
         self.set_reg(d, v);
     }
 
+    //shift left logical variable
+    fn op_sllv(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let v = self.reg(t) << (self.reg(s) & 0x1f);
+
+        self.set_reg(d, v);
+    }
+
     //shift right arithmetic
     fn op_sra(&mut self, instruction: Instruction) {
         let i = instruction.shift();
@@ -301,6 +349,17 @@ impl Cpu {
         self.set_reg(d, v as u32);
     }
 
+    //shift right arithmetic variable
+    fn op_srav(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let v = (self.reg(t) as i32) >> (self.reg(s) & 0x1f);
+
+        self.set_reg(d, v as u32);
+    }
+
     //shift right logical
     fn op_srl(&mut self, instruction: Instruction) {
         let i = instruction.shift();
@@ -308,6 +367,17 @@ impl Cpu {
         let t = instruction.t();
 
         let v = self.reg(t) >> i;
+
+        self.set_reg(d, v);
+    }
+
+    //shift right logical variable
+    fn op_srlv(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(t) >> (self.reg(s) & 0x1f);
 
         self.set_reg(d, v);
     }
@@ -461,6 +531,20 @@ impl Cpu {
             self.hi = n % d;
             self.lo = n / d;
         }
+    }
+
+    //multiplication unsigned
+    fn op_multu(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let a = self.reg(s);
+        let b = self.reg(t);
+
+        let v = (a * b) as u64;
+
+        self.hi = (v >> 32) as u32;
+        self.lo = v as u32;
     }
 
     //move from LO
@@ -623,11 +707,12 @@ impl Cpu {
 
         let addr = self.reg(s).wrapping_add(i);
 
-        let v = self.load32(addr);
-
-        self.set_reg(t, v);
-
-        self.load = (t, v);
+        if addr % 4 == 0 {
+            let v = self.load32(addr);
+            self.load = (t, v);
+        } else {
+            self.exception(Exception::LoadAddressError);
+        }
     }
 
     //load byte
@@ -652,6 +737,36 @@ impl Cpu {
         let addr = self.reg(s).wrapping_add(i);
 
         let v = self.load8(addr);
+
+        self.load = (t, v as u32);
+    }
+
+    //load halfword unsigned
+    fn op_lhu(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        if addr % 2 == 0 {
+            let v = self.load16(addr);
+            self.load = (t, v as u32);
+        } else {
+            self.exception(Exception::LoadAddressError)
+        }
+        
+    }
+
+    //load halfword signed
+    fn op_lh(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        let v = self.load16(addr) as i16;
 
         self.load = (t, v as u32);
     }
@@ -743,6 +858,8 @@ impl Cpu {
 enum Exception {
     SysCall = 0x8,
     Overflow = 0xc,
+    LoadAddressError = 0x4,
+    StoreAddressError = 0x5
 }
 
 #[derive(Copy, Clone)]

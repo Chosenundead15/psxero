@@ -37,6 +37,10 @@ pub mod map {
 
     pub const TIMERS: Range = Range(0x1f801100, 0x30);
 
+    pub const DMA: Range = Range(0x1f801080, 0x80);
+
+    pub const GPU: Range = Range(0x1f801810, 0x8);
+
     pub struct Range(u32, u32);
 
     impl Range {
@@ -74,6 +78,15 @@ impl Ram {
         b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     }
 
+    pub fn load16(&self, offset: u32) -> u16 {
+        let offset = offset as usize;
+
+        let b0 = self.data[offset + 0] as u16;
+        let b1 = self.data[offset + 1] as u16;
+
+        b0 | (b1 << 8)
+    }
+
     pub fn store32(&mut self, offset: u32, val: u32) {
         let offset = offset as usize;
 
@@ -86,6 +99,16 @@ impl Ram {
         self.data[offset + 1] = b1;
         self.data[offset + 2] = b2;
         self.data[offset + 3] = b3;
+    }
+
+    pub fn store16(&mut self, offset: u32, val: u16) {
+        let offset = offset as usize;
+
+        let b0 = val as u8;
+        let b1 = (val >> 8) as u8;
+
+        self.data[offset + 0] = b0;
+        self.data[offset + 1] = b1;
     }
 
     pub fn store8(&mut self, offset: u32, val: u8) {
@@ -129,8 +152,32 @@ impl Interconnect {
             println!("IRQ control read {:#x}", offset);
             return 0;
         }
-        panic!("unhandled_fecth_at_address_{:08x}", addr);
+
+        if let Some(offset) = map::DMA.contains(abs_addr) {
+            println!("DMA control read {:#x}", abs_addr);
+            return 0;
+        }
+
+        if let Some(offset) = map::GPU.contains(abs_addr) {
+            println!("GPU Read {}", abs_addr);
+            return 0;
+        }
+        panic!("unhandled_fecth32_at_address_{:08x}", addr);
     }
+
+    pub fn load16(&mut self, addr: u32) -> u16 {
+        let abs_addr = map::mask_region(addr);
+
+        if let Some(offset) = map::SPU.contains(abs_addr) {
+            println!("unhandled read from SPU register {:#x}", abs_addr);
+            return 0;
+        }
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.load16(offset)
+        }
+        panic!("unhandled fetch16 at address {:#x}", addr);
+    } 
 
     pub fn load8(&mut self, addr: u32) -> u8 {
         let abs_addr = map::mask_region(addr);
@@ -155,7 +202,7 @@ impl Interconnect {
             panic!("unaligned_load32_adress_{:08x}", addr);
         }
 
-        let addr = map::mask_region(addr);
+        let abs_addr = map::mask_region(addr);
 
         if let Some(offset) = map::SYS_CONTROL.contains(addr) {
             match offset {
@@ -171,30 +218,40 @@ impl Interconnect {
             return;
         }
 
-        if let Some(offset) = map::RAM.contains(addr) {
+        if let Some(offset) = map::RAM.contains(abs_addr) {
             self.ram.store32(offset, val);
             return;
         }
 
-        if let Some(offset) = map::RAM_SIZE.contains(addr) {
+        if let Some(offset) = map::RAM_SIZE.contains(abs_addr) {
             println!("Ram set attempted at {:#x}", offset);
             return;
         }
 
-        if let Some(offset) = map::CACHE_CONTROL.contains(addr) {
+        if let Some(offset) = map::CACHE_CONTROL.contains(abs_addr) {
             println!("cache control attempted at {:#x}", offset);
             return;
         }
 
-        if let Some(offset) = map::IRQ_CONTROL.contains(addr) {
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
             println!("IRQ Control: {:#x} <- {:#x}", offset, val);
+            return;
+        }
+
+        if let Some(offset) = map::DMA.contains(abs_addr) {
+            println!("DMA set: {:#x} <- {:#x}", offset, val);
+            return;
+        }
+
+        if let Some(offset) = map::GPU.contains(abs_addr) {
+            println!("GPU write {:#x} <- {:#x}", offset, val);
             return;
         }
 
         panic!("unhandled_store32_at_address_{:08x}", addr);
     }
 
-    pub fn store16(&mut self, addr: u32, _val: u16) {
+    pub fn store16(&mut self, addr: u32, val: u16) {
         if addr % 2 != 0 {
             panic!("unligned store16 address {:#x}", addr);
         }
@@ -209,6 +266,10 @@ impl Interconnect {
         if let Some(offset) = map::TIMERS.contains(abs_addr) {
             println!("unhandle write to timer register {:#x}", offset);
             return
+        }
+
+        if let Some(offset) = map::RAM.contains(abs_addr) {
+            return self.ram.store16(offset, val as u16);
         }
 
         panic!("unhandle store16 address {:#x}", addr);
