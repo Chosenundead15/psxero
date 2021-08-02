@@ -159,9 +159,14 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::GPU.contains(abs_addr) {
-            println!("GPU Read {}", abs_addr);
-            return 0;
+            println!("GPU Read {:#x}", abs_addr);
+            return match offset {
+                //set the bit 28 to signal the GPU is ready to receive DMA blocks
+                4 => 0x10000000,
+                _ => 0,
+            }
         }
+
         panic!("unhandled_fecth32_at_address_{:08x}", addr);
     }
 
@@ -175,6 +180,11 @@ impl Interconnect {
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
             return self.ram.load16(offset)
+        }
+
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control read {:#x}", offset);
+            return 0;
         }
         panic!("unhandled fetch16 at address {:#x}", addr);
     } 
@@ -248,6 +258,11 @@ impl Interconnect {
             return;
         }
 
+        if let Some(offset) = map::TIMERS.contains(abs_addr) {
+            println!("Unhandled write to timer register {:#x} <- {:#x}", offset, val);
+            return;
+        }
+
         panic!("unhandled_store32_at_address_{:08x}", addr);
     }
 
@@ -270,6 +285,11 @@ impl Interconnect {
 
         if let Some(offset) = map::RAM.contains(abs_addr) {
             return self.ram.store16(offset, val as u16);
+        }
+
+        if let Some(offset) = map::IRQ_CONTROL.contains(abs_addr) {
+            println!("IRQ control write {:#x} <- {:#x}", offset, val);
+            return;
         }
 
         panic!("unhandle store16 address {:#x}", addr);
