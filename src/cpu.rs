@@ -118,51 +118,77 @@ impl Cpu {
                 0b000100 => self.op_sllv(instruction),
                 0b000110 => self.op_srlv(instruction),
                 0b000111 => self.op_srav(instruction),
-                0b100000 => self.op_add(instruction),
-                0b101010 => self.op_slt(instruction),
-                0b101011 => self.op_sltu(instruction),
-                0b100100 => self.op_and(instruction),
-                0b100101 => self.op_or(instruction),
-                0b100111 => self.op_nor(instruction),
-                0b100001 => self.op_addu(instruction),
-                0b011001 => self.op_multu(instruction),
-                0b011010 => self.op_div(instruction),
-                0b011011 => self.op_divu(instruction),  
-                0b010010 => self.op_mflo(instruction),
-                0b010011 => self.op_mtlo(instruction),
-                0b010000 => self.op_mfhi(instruction),
-                0b010001 => self.op_mthi(instruction),
-                0b100011 => self.op_subu(instruction),
                 0b001000 => self.op_jr(instruction),
                 0b001001 => self.op_jalr(instruction),
                 0b001100 => self.op_syscall(instruction),
-                _        => panic!("unhandled instruction {:#x}", instruction.0)
+                0b001101 => self.op_break(instruction),
+                0b010000 => self.op_mfhi(instruction),
+                0b010001 => self.op_mthi(instruction),
+                0b010010 => self.op_mflo(instruction),
+                0b010011 => self.op_mtlo(instruction),
+                0b011000 => self.op_mult(instruction),
+                0b011001 => self.op_multu(instruction),
+                0b011010 => self.op_div(instruction),
+                0b011011 => self.op_divu(instruction),
+                0b100000 => self.op_add(instruction),
+                0b100001 => self.op_addu(instruction),  
+                0b100010 => self.op_sub(instruction),
+                0b100011 => self.op_subu(instruction),
+                0b100100 => self.op_and(instruction),
+                0b100101 => self.op_or(instruction),
+                0b100110 => self.op_xor(instruction),
+                0b100111 => self.op_nor(instruction),
+                0b101010 => self.op_slt(instruction),
+                0b101011 => self.op_sltu(instruction),
+                _        => self.op_illegal(instruction)
             }
             0b000001 => self.op_bxx(instruction),
             0b000010 => self.op_j(instruction),
             0b000011 => self.op_jal(instruction),
-            0b001111 => self.op_lui(instruction),
-            0b001100 => self.op_andi(instruction),
-            0b001101 => self.op_ori(instruction),
-            0b001010 => self.op_slti(instruction),
-            0b001011 => self.op_sltiu(instruction),
-            0b101011 => self.op_sw(instruction),
-            0b101001 => self.op_sh(instruction),
-            0b101000 => self.op_sb(instruction),
-            0b001001 => self.op_addiu(instruction),
-            0b001000 => self.op_addi(instruction),
-            0b000101 => self.op_bne(instruction),
             0b000100 => self.op_beq(instruction),
+            0b000101 => self.op_bne(instruction),
             0b000110 => self.op_blez(instruction),
             0b000111 => self.op_bgtz(instruction),
-            0b100011 => self.op_lw(instruction),
+            0b001000 => self.op_addi(instruction),
+            0b001001 => self.op_addiu(instruction),
+            0b001010 => self.op_slti(instruction),
+            0b001011 => self.op_sltiu(instruction),
+            0b001100 => self.op_andi(instruction),
+            0b001101 => self.op_ori(instruction),
+            0b001110 => self.op_xori(instruction),
+            0b001111 => self.op_lui(instruction),
+            0b010000 => self.op_cop0(instruction),
+            0b010001 => self.op_cop1(instruction),
+            0b011110 => self.op_cop2(instruction),
+            0b010011 => self.op_cop3(instruction),
             0b100000 => self.op_lb(instruction),
+            0b100001 => self.op_lh(instruction),
+            0b100010 => self.op_lwl(instruction),
+            0b100011 => self.op_lw(instruction),
             0b100100 => self.op_lbu(instruction),
             0b100101 => self.op_lhu(instruction),
-            0b100001 => self.op_lh(instruction),
-            0b010000 => self.op_cop0(instruction),
-            _        => panic!("Unhandled_instruction_{:#x}", instruction.0)
+            0b100110 => self.op_lwr(instruction),
+            0b101000 => self.op_sb(instruction),
+            0b101001 => self.op_sh(instruction),
+            0b101010 => self.op_swl(instruction),
+            0b101011 => self.op_sw(instruction),
+            0b101110 => self.op_swr(instruction),
+            0b110000 => self.op_lwc0(instruction),
+            0b110001 => self.op_lwc1(instruction),
+            0b110010 => self.op_lwc2(instruction),
+            0b110011 => self.op_lwc3(instruction),
+            0b111000 => self.op_swc0(instruction),
+            0b111001 => self.op_swc1(instruction),
+            0b111010 => self.op_swc2(instruction),
+            0b111011 => self.op_swc3(instruction),
+            _        => self.op_illegal(instruction),
         }
+    }
+
+    // illegal instruction
+    fn op_illegal(&mut self, instruction: Instruction) {
+        println!("illegal instruction {:#x}", instruction.0);
+        self.exception(Exception::IllegalInstruction);
     }
 
     //branch to immediate value
@@ -190,6 +216,58 @@ impl Cpu {
             0b10000 => self.op_rfe(instruction),
             _       => panic!("unhandle coprocessor instruction {:#x}", instruction.0)
         }
+    }
+
+    //coprocessor 1 opcode(does not exist on the Playastation)
+    fn op_cop1(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    //coprocessor 2 opcode(GTE)
+    fn op_cop2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE instruction: {:#x}", instruction.0);
+    }
+
+    //coprocessor 3 opcode(does not exist on the Playastation)
+    fn op_cop3(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    //load word in coprocessor 0
+    fn op_lwc0(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    //load word inc coprocessor 1
+    fn op_lwc1(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    //load word in coprocessor 2(GTE)
+    fn op_lwc2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE LWC: {:#x}", instruction.0);
+    }
+
+    //load word in coprocessor 3
+    fn op_lwc3(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+
+    //store word in coprocessor 0
+    fn op_swc0(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+    //store word in coprocessor 1
+    fn op_swc1(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
+    }
+    //store word in coprocessor 2(GTE)
+    fn op_swc2(&mut self, instruction: Instruction) {
+        panic!("unhandled GTE SWC: {:#x}", instruction.0);
+    }
+    //store word in coprocessor 3
+    fn op_swc3(&mut self, _: Instruction) {
+        self.exception(Exception::CoprocessorError);
     }
 
     //load upper immediate
@@ -224,6 +302,17 @@ impl Cpu {
         self.set_reg(t, v);
     }
 
+    //bitwise xor immediate
+    fn op_xor(&mut self, instruction: Instruction) {
+        let i = instruction.imm();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let v = self.reg(s) ^ i;
+
+        self.set_reg(t, v);
+    }
+
     //bitwise or
     fn op_or(&mut self, instruction: Instruction) {
         let d = instruction.d();
@@ -231,6 +320,17 @@ impl Cpu {
         let t = instruction.t();
 
         let v = self.reg(s) | self.reg(t);
+
+        self.set_reg(d, v);
+    }
+
+    //bitwise xor
+    fn op_xori(&mut self, instruction: Instruction) {
+        let d = instruction.d();
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let v = self.reg(s) ^ self.reg(t);
 
         self.set_reg(d, v);
     }
@@ -462,6 +562,21 @@ impl Cpu {
         self.set_reg(d, v);
     }
 
+    //subtract signed
+    fn op_sub(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+        let d = instruction.d();
+
+        let s = self.reg(s) as i32;
+        let t = self.reg(t) as i32;
+
+        match s.checked_sub(t) {
+            Some(v) => self.set_reg(d, v as u32),
+            None => self.exception(Exception::Overflow),
+        }
+    }
+
     //add immediate unsigned and check overflow
     fn op_addi(&mut self, instruction: Instruction) {
         let i = instruction.imm_se() as i32;
@@ -540,6 +655,20 @@ impl Cpu {
 
         let a = self.reg(s);
         let b = self.reg(t);
+
+        let v = (a * b) as u64;
+
+        self.hi = (v >> 32) as u32;
+        self.lo = v as u32;
+    }
+
+    //multiplication signed
+    fn op_mult(&mut self, instruction: Instruction) {
+        let s = instruction.s();
+        let t = instruction.t();
+
+        let a = (self.reg(s) as i32) as i64;
+        let b = (self.reg(t) as i32) as i64;
 
         let v = (a * b) as u64;
 
@@ -715,6 +844,114 @@ impl Cpu {
         }
     }
 
+    //load word left(little endian only implementation)
+    fn op_lwl(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        //this instruction bypasses the load delay restriction:
+        //this instruction will merge the new contents with the value currently being loaded
+        let cur_v = self.out_regs[t.0 as usize];
+
+        //load the aligned word containing the first addressed byte
+        let aligned_addr = addr & !3;
+        let aligned_word = self.load32(aligned_addr);
+
+        //depending on the address alignment we fetch the 1, 2, 3 or 4 most significant bytes
+        //and put them in the target register
+        let v = match addr & 3 {
+            0 => (cur_v & 0x00ffffff) | (aligned_word << 24),
+            1 => (cur_v & 0x0000ffff) | (aligned_word << 16),
+            3 => (cur_v & 0x000000ff) | (aligned_word << 8),
+            4 => (cur_v & 0x00000000) | (aligned_word << 0),
+            _ => unreachable!(),
+        };
+
+        self.load = (t, v);
+    }
+
+    //load word right(little endian only implementation)
+    fn op_lwr(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+
+        //this instruction bypasses the load delay restriction:
+        //this instruction will merge the new contents with the value currently being loaded
+        let cur_v = self.out_regs[t.0 as usize];
+
+        //load the aligned word containing the first addressed byte
+        let aligned_addr = addr & !3;
+        let aligned_word = self.load32(aligned_addr);
+
+        //depending on the address alignment we fetch the 1, 2, 3 or 4 most significant bytes
+        //and put them in the target register
+        let v = match addr & 3 {
+            0 => (cur_v & 0x00000000) | (aligned_word >> 0),
+            1 => (cur_v & 0xff000000) | (aligned_word >> 8),
+            3 => (cur_v & 0xffff0000) | (aligned_word >> 16),
+            4 => (cur_v & 0xffffff00) | (aligned_word >> 24),
+            _ => unreachable!(),
+        };
+
+        self.load = (t, v);
+    }
+
+    //store word left(little endian only implementation)
+    fn op_swl(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v = self.reg(t);
+
+        let aligned_addr = addr & !3;
+
+        //load the current value for the aligned word at the address    
+        let cur_mem = self.load32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (cur_mem & 0xffffff00) | (v >> 24),
+            1 => (cur_mem & 0xffff0000) | (v >> 16),
+            2 => (cur_mem & 0xff000000) | (v >> 8),
+            3 => (cur_mem & 0x00000000) | (v >> 0),
+            _ => unreachable!(),
+        };
+
+        self.store32(addr, mem);
+    }
+
+    //store word right(little endian only implementation)
+    fn op_swr(&mut self, instruction: Instruction) {
+        let i = instruction.imm_se();
+        let t = instruction.t();
+        let s = instruction.s();
+
+        let addr = self.reg(s).wrapping_add(i);
+        let v = self.reg(t);
+
+        let aligned_addr = addr & !3;
+
+        //load the current value for the aligned word at the address    
+        let cur_mem = self.load32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (cur_mem & 0x00000000) | (v << 0),
+            1 => (cur_mem & 0x000000ff) | (v << 8),
+            2 => (cur_mem & 0x0000ffff) | (v << 16),
+            3 => (cur_mem & 0x00ffffff) | (v << 24),
+            _ => unreachable!(),
+        };
+
+        self.store32(addr, mem);
+    }
+
     //load byte
     fn op_lb(&mut self, instruction: Instruction) {
         let i = instruction.imm_se();
@@ -850,8 +1087,14 @@ impl Cpu {
         self.next_pc = self.pc.wrapping_add(4);
     }
 
+    //Systen Call
     fn op_syscall(&mut self, _: Instruction) {
         self.exception(Exception::SysCall);
+    }
+
+    //Break
+    fn op_break(&mut self, _: Instruction) {
+        self.exception(Exception::Break);
     }
 }
 
@@ -859,7 +1102,10 @@ enum Exception {
     SysCall = 0x8,
     Overflow = 0xc,
     LoadAddressError = 0x4,
-    StoreAddressError = 0x5
+    StoreAddressError = 0x5,
+    Break = 0x9,
+    CoprocessorError = 0xb,
+    IllegalInstruction = 0xa,
 }
 
 #[derive(Copy, Clone)]
